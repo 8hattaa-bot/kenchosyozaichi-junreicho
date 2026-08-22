@@ -1,0 +1,116 @@
+/* Shared styling for the published policy pages. Mirrors the app's palette so
+   the pages read as part of the same product. Self-contained: no webfonts or
+   CDN links, so the pages work offline and load instantly on GitHub Pages. */
+:root {
+  --cream: #f3ecdc;
+  --paper: #fbf7ee;
+  --ink: #2b2621;
+  --muted: #5c544a;
+  --navy: #16283f;
+  --seal: #bd3b28;
+  --gold: #b8923f;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  padding: 32px 20px 64px;
+  background: var(--cream);
+  color: var(--ink);
+  font-family: "Hiragino Kaku Gothic ProN", "Yu Gothic", "Meiryo", system-ui, sans-serif;
+  line-height: 1.85;
+  font-size: 16px;
+}
+
+main {
+  max-width: 720px;
+  margin: 0 auto;
+  background: var(--paper);
+  border: 1px solid rgba(43, 38, 33, 0.14);
+  border-radius: 14px;
+  padding: 36px 32px 44px;
+}
+
+.seal {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--seal);
+  border: 3px solid var(--gold);
+  color: var(--cream);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 30px;
+  font-weight: 800;
+  margin: 0 auto 18px;
+}
+
+h1 {
+  font-size: 25px;
+  color: var(--navy);
+  text-align: center;
+  margin: 0 0 6px;
+}
+
+.sub {
+  text-align: center;
+  color: var(--muted);
+  font-size: 13.5px;
+  margin: 0 0 30px;
+}
+
+h2 {
+  font-size: 17px;
+  color: var(--navy);
+  margin: 34px 0 10px;
+  padding-bottom: 7px;
+  border-bottom: 2px solid rgba(184, 146, 63, 0.45);
+}
+
+.note {
+  background: rgba(184, 146, 63, 0.12);
+  border: 1px solid rgba(184, 146, 63, 0.35);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 14.5px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 14px 0;
+  font-size: 14px;
+}
+
+th, td {
+  border: 1px solid rgba(43, 38, 33, 0.16);
+  padding: 9px 11px;
+  text-align: left;
+  vertical-align: top;
+}
+
+th { background: rgba(22, 40, 63, 0.06); color: var(--navy); }
+
+/* Wide tables must scroll inside their own box rather than pushing the page
+   sideways on a phone. */
+.table-wrap { overflow-x: auto; }
+
+a { color: var(--seal); }
+
+footer {
+  max-width: 720px;
+  margin: 22px auto 0;
+  text-align: center;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+footer a { margin: 0 8px; }
+
+@media (max-width: 520px) {
+  body { padding: 20px 12px 48px; font-size: 15px; }
+  main { padding: 26px 18px 32px; border-radius: 12px; }
+  h1 { font-size: 21px; }
+}
