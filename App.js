@@ -46,6 +46,18 @@ import Dices from "lucide-react-native/icons/dices";
 import CheckCircle2 from "lucide-react-native/icons/circle-check";
 import Lightbulb from "lucide-react-native/icons/lightbulb";
 import X from "lucide-react-native/icons/x";
+// Collection icons. Imported per-icon like the rest so the whole lucide set
+// never lands in the bundle.
+import Cat from "lucide-react-native/icons/cat";
+import Soup from "lucide-react-native/icons/soup";
+import Fish from "lucide-react-native/icons/fish";
+import Cake from "lucide-react-native/icons/cake";
+import Store from "lucide-react-native/icons/store";
+import Castle from "lucide-react-native/icons/castle";
+import Trees from "lucide-react-native/icons/trees";
+import Landmark from "lucide-react-native/icons/landmark";
+import TowerControl from "lucide-react-native/icons/tower-control";
+import ChevronRight from "lucide-react-native/icons/chevron-right";
 
 import {
   REGIONS,
@@ -62,6 +74,7 @@ import {
   cityRankFor,
   completedTextsFor,
   buildCollectionProgress,
+  buildCollectionDetail,
   distanceKm,
   LOCATION_RADIUS_KM,
   LOCATION_TARGETS,
@@ -238,6 +251,110 @@ function CityBadge({ label, size = 44 }) {
 // mission modal re-rendered the entire grid — the most visible source of lag.
 // `pref` comes from the precomputed REGIONS_WITH_PREFS so its identity is
 // stable, and `record` only changes for the city that was actually stamped.
+const COLLECTION_ICONS = {
+  cat: Cat, soup: Soup, fish: Fish, cake: Cake, store: Store,
+  castle: Castle, trees: Trees, landmark: Landmark, tower: TowerControl,
+};
+
+function CollectionIcon({ name, size = 18, color = "#16283F" }) {
+  const Ico = COLLECTION_ICONS[name] || Cat;
+  return <Ico size={size} color={color} />;
+}
+
+// One row of the collection list. Shows what the collection wants and how far
+// along it is, and opens the city breakdown when tapped.
+const CollectionRow = React.memo(function CollectionRow({ item, onPress }) {
+  const pct = item.total ? Math.round((item.done / item.total) * 100) : 0;
+  const complete = item.total > 0 && item.done === item.total;
+  return (
+    <TouchableOpacity style={styles.collCard} onPress={() => onPress(item)} activeOpacity={0.7}>
+      <View style={[styles.collIconWrap, complete && styles.collIconWrapDone]}>
+        <CollectionIcon name={item.icon} color={complete ? "#FBF3E4" : "#16283F"} />
+      </View>
+      <View style={{ flex: 1 }}>
+        <View style={styles.collCardTop}>
+          <Text style={styles.collCardLabel}>{item.label}</Text>
+          <Text style={[styles.collCardCount, complete && styles.collCardCountDone]}>
+            {item.done} / {item.total}
+          </Text>
+        </View>
+        <Text style={styles.collCardHint} numberOfLines={1}>{item.hint}</Text>
+        <View style={styles.collBarTrack}>
+          <View style={[styles.collBarFill, { width: pct + "%" }, complete && styles.collBarFillDone]} />
+        </View>
+      </View>
+      <ChevronRight size={16} color="#9A9086" />
+    </TouchableOpacity>
+  );
+});
+
+// The breakdown behind a collection: every city it covers, the exact mission
+// that counts there, and whether it is already done.
+function CollectionModal({ item, stamps, onClose, onPickCity }) {
+  const rows = useMemo(() => buildCollectionDetail(item.cat, stamps), [item.cat, stamps]);
+  const complete = item.done === item.total;
+  return (
+    <Modal visible animationType="slide" transparent onRequestClose={onClose}>
+      <View style={styles.modalBackdrop}>
+        <View style={styles.modalSheet}>
+          <WashiTexture opacity={0.06} />
+          <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 28 }}>
+            <TouchableOpacity style={styles.modalClose} onPress={onClose}>
+              <X size={20} color="#5C544A" />
+            </TouchableOpacity>
+
+            <View style={styles.collHead}>
+              <View style={[styles.collIconWrap, styles.collIconWrapLarge, complete && styles.collIconWrapDone]}>
+                <CollectionIcon name={item.icon} size={24} color={complete ? "#FBF3E4" : "#16283F"} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.modalCapital}>{item.label}</Text>
+                <Text style={styles.modalPref}>{item.hint}</Text>
+              </View>
+            </View>
+
+            <View style={styles.collSummary}>
+              <Text style={styles.collSummaryCount}>{item.done} / {item.total} 都市</Text>
+              <Text style={styles.collSummaryNote}>
+                {complete ? "この実績は制覇済みです" : "残り " + (item.total - item.done) + " 都市"}
+              </Text>
+            </View>
+
+            <Text style={styles.collListLabel}>対象の都市とミッション</Text>
+            {rows.map((r) => (
+              <TouchableOpacity
+                key={r.id}
+                style={[styles.collCityRow, r.done && styles.collCityRowDone]}
+                onPress={() => onPickCity(r.id)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.collCityMark}>
+                  {r.done
+                    ? <CheckCircle2 size={16} color="#2E7D46" />
+                    : <View style={styles.collCityDot} />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.collCityName}>
+                    {r.capital}
+                    <Text style={styles.collCityRegion}>　{r.region}</Text>
+                  </Text>
+                  {r.missions.map((m) => (
+                    <Text key={m} style={styles.collCityMission}>・{m}</Text>
+                  ))}
+                </View>
+                <ChevronRight size={14} color="#9A9086" />
+              </TouchableOpacity>
+            ))}
+            <Text style={styles.collFootNote}>
+              都市をタップすると、その都市のスタンプ画面が開きます。
+            </Text>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
 const StampCard = React.memo(function StampCard({ pref, record, onPress }) {
   const visited = !!record?.visited;
   return (
@@ -872,6 +989,7 @@ export default function App() {
   const rank = rankFor(visitedCount);
   const nextRank = RANKS.find((r) => r.min > visitedCount);
   const collectionProgress = useMemo(() => buildCollectionProgress(stamps), [stamps]);
+  const [openCollection, setOpenCollection] = useState(null);
 
   const handleMissionChange = async (id, missionObj, isReroll) => {
     const today = todayStr();
@@ -1001,8 +1119,11 @@ export default function App() {
         ))}
 
         <Text style={styles.collectionTitle}>全国コレクション</Text>
+        <Text style={styles.collectionLead}>
+          テーマごとの実績です。タップすると対象の都市と、そこで達成すべきミッションが見られます。
+        </Text>
         {collectionProgress.map((c) => (
-          <Text key={c.cat} style={styles.collectionRow}>{c.label}：{c.done}/{c.total}都市</Text>
+          <CollectionRow key={c.cat} item={c} onPress={setOpenCollection} />
         ))}
       </ScrollView>
 
@@ -1021,6 +1142,20 @@ export default function App() {
           onClear={handleClear}
           onMissionChange={handleMissionChange}
           onAddProgress={handleAddProgress}
+        />
+      )}
+
+      {openCollection && (
+        <CollectionModal
+          item={openCollection}
+          stamps={stamps}
+          onClose={() => setOpenCollection(null)}
+          onPickCity={(id) => {
+            // Hand off to the city sheet rather than stacking two modals.
+            setOpenCollection(null);
+            const target = ALL_PREFS.find((p) => p.id === id);
+            if (target) setOpenPref(target);
+          }}
         />
       )}
 
@@ -1070,7 +1205,32 @@ const styles = StyleSheet.create({
   cardDate: { fontSize: 9, color: "#9A2E1F", fontWeight: "700", marginTop: 2 },
   hankoWrap: { alignItems: "center", justifyContent: "center", marginBottom: 6 },
   collectionTitle: { fontSize: 15, fontWeight: "700", color: "#16283F", marginTop: 10, marginBottom: 6 },
-  collectionRow: { fontSize: 12, color: "#5C544A", marginBottom: 3 },
+  collectionLead: { fontSize: 11.5, color: "#5C544A", lineHeight: 17, marginBottom: 10 },
+  collCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.6)", borderRadius: 12, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", padding: 10, marginBottom: 8 },
+  collIconWrap: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(184,146,63,0.18)", borderWidth: 1, borderColor: "rgba(184,146,63,0.4)" },
+  collIconWrapLarge: { width: 46, height: 46, borderRadius: 23 },
+  collIconWrapDone: { backgroundColor: "#B8923F", borderColor: "#B8923F" },
+  collCardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
+  collCardLabel: { fontSize: 13, fontWeight: "800", color: "#16283F" },
+  collCardCount: { fontSize: 12, fontWeight: "800", color: "#5C544A" },
+  collCardCountDone: { color: "#B8923F" },
+  collCardHint: { fontSize: 10.5, color: "#5C544A", marginTop: 1, marginBottom: 5 },
+  collBarTrack: { height: 5, borderRadius: 3, backgroundColor: "rgba(43,38,33,0.12)", overflow: "hidden" },
+  collBarFill: { height: 5, borderRadius: 3, backgroundColor: "#BD3B28" },
+  collBarFillDone: { backgroundColor: "#B8923F" },
+  collHead: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
+  collSummary: { flexDirection: "row", alignItems: "baseline", gap: 10, backgroundColor: "rgba(184,146,63,0.12)", borderWidth: 1, borderColor: "rgba(184,146,63,0.3)", borderRadius: 10, padding: 12, marginBottom: 16 },
+  collSummaryCount: { fontSize: 18, fontWeight: "800", color: "#16283F" },
+  collSummaryNote: { fontSize: 11.5, color: "#5C544A", fontWeight: "700" },
+  collListLabel: { fontSize: 12, fontWeight: "700", color: "#5C544A", marginBottom: 8 },
+  collCityRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "rgba(255,255,255,0.55)", borderRadius: 10, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", padding: 10, marginBottom: 6 },
+  collCityRowDone: { backgroundColor: "rgba(46,125,70,0.08)", borderColor: "rgba(46,125,70,0.3)" },
+  collCityMark: { width: 16, alignItems: "center", paddingTop: 1 },
+  collCityDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(43,38,33,0.3)", borderStyle: "dashed" },
+  collCityName: { fontSize: 13, fontWeight: "700", color: "#2B2621" },
+  collCityRegion: { fontSize: 10, fontWeight: "400", color: "#9A9086" },
+  collCityMission: { fontSize: 11, color: "#5C544A", marginTop: 2, lineHeight: 16 },
+  collFootNote: { fontSize: 10.5, color: "#9A9086", marginTop: 8, textAlign: "center" },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(22,20,17,0.5)", justifyContent: "flex-end" },
   modalSheet: { backgroundColor: "#F3ECDC", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "88%", overflow: "hidden" },

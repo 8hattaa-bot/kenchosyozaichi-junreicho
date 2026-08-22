@@ -336,22 +336,25 @@ export function completedTextsFor(record) {
 // fragments cause false positives. Anything added here must be specific enough
 // that it cannot appear inside an unrelated word — e.g. bare "宮" also matches
 // 宇都宮 and 大宮, and bare "モン" also matches レモン牛乳.
+// Each rule carries the icon and the one-line "what am I collecting" hint the
+// collection list shows. Without them the list was nine lines of grey text —
+// a count with no way to tell what it wanted or which cities it meant.
 export const COLLECTION_RULES = [
   // mascot is checked first, and deliberately so. Its missions name the place
   // the character lives (さっぽろテレビ塔, 松山城本丸広場, 奈良県庁前), and those
   // words would otherwise be swallowed by the tower / castle / park rules below.
   // Each of those collections still keeps the city via one of its other missions.
-  { cat: "mascot", label: "ご当地キャラ制覇", keywords: ["ご当地キャラ", "キャラクター", "マスコット", "ゆるキャラ", "くまモン", "テレビ父さん", "むすび丸", "ぐんまちゃん", "アルクマ", "せんとくん", "しまねっこ", "みきゃん"] },
-  { cat: "noodle", label: "麺類制覇", keywords: ["麺", "そば", "うどん", "ちゃんぽん"] },
-  { cat: "seafood", label: "海鮮制覇", keywords: ["海鮮", "カニ", "かに", "のどぐろ", "しじみ", "牡蠣", "鯛", "いか", "えび", "海の幸", "カツオ", "ふぐ", "うなぎ", "馬刺し"] },
-  { cat: "sweets", label: "スイーツ制覇", keywords: ["スイーツ", "餅", "饅頭", "まんじゅう", "カステラ", "ちんすこう", "タルト", "かき氷", "白熊", "ういろう", "きびだんご"] },
-  { cat: "market", label: "市場・横丁制覇", keywords: ["市場", "商店街", "横丁", "アーケード", "屋台"] },
-  { cat: "castle", label: "城めぐり制覇", keywords: ["城"] },
+  { cat: "mascot", label: "ご当地キャラ制覇", icon: "cat", hint: "8地方に1体ずつ。像・パネル・グッズを撮る", keywords: ["ご当地キャラ", "キャラクター", "マスコット", "ゆるキャラ", "くまモン", "テレビ父さん", "むすび丸", "ぐんまちゃん", "アルクマ", "せんとくん", "しまねっこ", "みきゃん"] },
+  { cat: "noodle", label: "麺類制覇", icon: "soup", hint: "ラーメン・そば・うどんなどご当地の麺を食べる", keywords: ["麺", "そば", "うどん", "ちゃんぽん"] },
+  { cat: "seafood", label: "海鮮制覇", icon: "fish", hint: "海鮮丼や地魚など、その土地の海の幸を食べる", keywords: ["海鮮", "カニ", "かに", "のどぐろ", "しじみ", "牡蠣", "鯛", "いか", "えび", "海の幸", "カツオ", "ふぐ", "うなぎ", "馬刺し"] },
+  { cat: "sweets", label: "スイーツ制覇", icon: "cake", hint: "餅・饅頭・カステラなどご当地の甘味を食べる", keywords: ["スイーツ", "餅", "饅頭", "まんじゅう", "カステラ", "ちんすこう", "タルト", "かき氷", "白熊", "ういろう", "きびだんご"] },
+  { cat: "market", label: "市場・横丁制覇", icon: "store", hint: "市場・商店街・屋台など、人の集まる場所を訪ねる", keywords: ["市場", "商店街", "横丁", "アーケード", "屋台"] },
+  { cat: "castle", label: "城めぐり制覇", icon: "castle", hint: "天守や城跡を撮る", keywords: ["城"] },
   // park_garden is checked before shrine_temple so 水前寺成趣園 lands in gardens
   // rather than being swallowed by the "寺" in its name.
-  { cat: "park_garden", label: "公園・庭園制覇", keywords: ["公園", "庭園", "偕楽園", "兼六園", "後楽園", "成趣園", "グラバー園", "御苑"] },
-  { cat: "shrine_temple", label: "寺社仏閣制覇", keywords: ["寺", "神社", "神宮", "大社", "稲荷", "参道", "聖堂", "本堂", "門前"] },
-  { cat: "tower_landmark", label: "タワー・展望制覇", keywords: ["タワー", "展望", "五重塔", "テレビ塔", "通天閣"] },
+  { cat: "park_garden", label: "公園・庭園制覇", icon: "trees", hint: "兼六園・後楽園など名園と公園をめぐる", keywords: ["公園", "庭園", "偕楽園", "兼六園", "後楽園", "成趣園", "グラバー園", "御苑"] },
+  { cat: "shrine_temple", label: "寺社仏閣制覇", icon: "landmark", hint: "寺社を訪ねて撮る", keywords: ["寺", "神社", "神宮", "大社", "稲荷", "参道", "聖堂", "本堂", "門前"] },
+  { cat: "tower_landmark", label: "タワー・展望制覇", icon: "tower", hint: "タワーや展望スポットから街を見下ろす", keywords: ["タワー", "展望", "五重塔", "テレビ塔", "通天閣"] },
 ];
 
 export function classifyMission(text) {
@@ -393,11 +396,34 @@ export function buildCollectionProgress(stamps) {
   return COLLECTION_RULES.map((rule) => ({
     cat: rule.cat,
     label: rule.label,
+    icon: rule.icon,
+    hint: rule.hint,
     done: done[rule.cat] || 0,
     total: totals[rule.cat] || 0,
   })).filter((c) => c.total > 0);
 }
 
+
+// Which cities a collection actually covers, and whether each is done yet.
+// The list screen only ever had the counts, so "0/8都市" gave no way to find
+// the eight cities it meant. This backs the tap-through detail view.
+export function buildCollectionDetail(cat, stamps = {}) {
+  const rows = [];
+  for (const pref of ALL_PREFS) {
+    const missions = allMissionsForPref(pref).filter((m) => classifyMission(m.text) === cat);
+    if (!missions.length) continue;
+    const completed = completedTextsFor(stamps[pref.id]);
+    rows.push({
+      id: pref.id,
+      capital: pref.capital,
+      pref: pref.pref,
+      region: pref.region,
+      missions: missions.map((m) => m.text),
+      done: missions.some((m) => completed.includes(m.text)),
+    });
+  }
+  return rows;
+}
 
 export function distanceKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
