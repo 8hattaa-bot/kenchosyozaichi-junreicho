@@ -284,6 +284,24 @@ const PREF_MISSIONS = {
 // Every prefecture has a hand-picked, specific mission set above (real dish
 // names, real landmarks). The generic pools just below are a safety-net
 // fallback in case a prefecture is ever missing from that table.
+// A mission's identity is this id, never its text. Records store the id, so
+// the wording can be improved later without silently un-completing anything
+// somebody already did.
+//
+// The id is derived from the mission's SLOT: prefecture, type, and position in
+// the array. That makes the rule for editing PREF_MISSIONS simple but strict:
+//
+//   OK  — rewrite the text of an entry in place (same slot, same id)
+//   OK  — append a new entry to the end of a type's array (fresh id)
+//   NO  — reorder entries, or delete one from the middle
+//
+// Reordering silently reassigns ids and would move people's completions onto
+// missions they never did. To retire a mission, overwrite it in place instead.
+// audit の "ID の安定性" チェックが、この約束が破られていないかを見張っている。
+export function missionIdFor(prefId, type, index) {
+  return prefId + ":" + type + ":" + index;
+}
+
 export function allMissionsForPref(pref) {
   const specific = PREF_MISSIONS[pref.id];
   const eatPool = specific?.eat?.length ? specific.eat : EAT_MISSIONS;
@@ -291,18 +309,28 @@ export function allMissionsForPref(pref) {
   const locationPool = specific?.location?.length
     ? specific.location
     : LOCATION_MISSIONS.map((fn) => fn(pref.capital));
+  const tag = (type, pool) =>
+    pool.map((text, i) => ({ id: missionIdFor(pref.id, type, i), type, text }));
   return [
-    ...eatPool.map((text) => ({ type: "eat", text })),
-    ...photoPool.map((text) => ({ type: "photo", text })),
-    ...locationPool.map((text) => ({ type: "location", text })),
+    ...tag("eat", eatPool),
+    ...tag("photo", photoPool),
+    ...tag("location", locationPool),
   ];
 }
 
-export function rollMission(pref, excludeTexts = []) {
+export function rollMission(pref, excludeIds = []) {
   const full = allMissionsForPref(pref);
-  const pool = excludeTexts.length ? full.filter((m) => !excludeTexts.includes(m.text)) : full;
+  const pool = excludeIds.length ? full.filter((m) => !excludeIds.includes(m.id)) : full;
   const usable = pool.length ? pool : full; // never return an empty pool
   return usable[Math.floor(Math.random() * usable.length)];
+}
+
+// Look a mission up by id. Returns undefined for an id that no longer exists,
+// which is why callers keep the stored text around as a display fallback.
+export function missionById(prefId, id) {
+  const pref = ALL_PREFS.find((p) => p.id === prefId);
+  if (!pref) return undefined;
+  return allMissionsForPref(pref).find((m) => m.id === id);
 }
 
 // ---------------------------------------------------------------------------
@@ -322,10 +350,78 @@ export function cityRankFor(doneCount) {
   return r;
 }
 
-export function completedTextsFor(record) {
+// Missions whose wording changed while records still keyed off the text.
+// Only true rewordings belong here — the same errand, described better. A
+// mission that was swapped for a *different* errand must NOT be aliased, or
+// people get credited for something they never did.
+const LEGACY_MISSION_ALIASES = {
+  // ご当地キャラ8件: 売店・県庁への限定を外しただけで、やることは同じ
+  "さっぽろテレビ塔のご当地キャラ「テレビ父さん」のパネルやグッズを撮る": "hokkaido:photo:1",
+  "宮城県庁1階でご当地キャラ「むすび丸」のグッズを撮る": "miyagi:photo:1",
+  "群馬県庁の県民センターでご当地キャラ「ぐんまちゃん」のグッズを撮る": "gunma:photo:1",
+  "長野駅ビルMIDORIのご当地キャラ「アルクマ」と写真を撮る": "nagano:photo:2",
+  "奈良県庁前のご当地キャラ「せんとくん」立像を撮る": "nara:photo:2",
+  "島根県物産観光館でご当地キャラ「しまねっこ」のグッズを撮る": "shimane:photo:2",
+  "松山城本丸広場の売店でご当地キャラ「みきゃん」のグッズを撮る": "ehime:photo:2",
+  // くまモンは3回言い換えているので、途中の形も拾う
+  "くまモンスクエアでくまモンを探して撮る": "kumamoto:photo:2",
+  "くまモンスクエアのくまモン装飾を撮る": "kumamoto:photo:2",
+  "くまモンスクエアでご当地キャラ「くまモン」の装飾を撮る": "kumamoto:photo:2",
+  // 対象そのものは変えず、条件の書き方だけ直したもの
+  "牡蠣料理を味わう（旬季）": "hiroshima:eat:1",
+  "岐阜城（金華山山頂）の写真を撮る": "gifu:photo:0",
+  "富山市役所展望塔から立山連峰を撮る": "toyama:photo:1",
+};
+
+// Text -> id for every mission currently in the table. Built once; used only
+// to migrate records saved before ids existed.
+const TEXT_TO_ID = (() => {
+  const map = {};
+  for (const pref of ALL_PREFS) {
+    for (const m of allMissionsForPref(pref)) map[m.text] = m.id;
+  }
+  return map;
+})();
+
+function idForLegacyText(text) {
+  return TEXT_TO_ID[text] || LEGACY_MISSION_ALIASES[text] || null;
+}
+
+// The completed mission ids on a record, migrating older text-keyed records on
+// the way through. A text that matches nothing is dropped rather than guessed
+// at: it means that mission was replaced by a different one, and the person
+// never did the new one.
+export function completedIdsFor(record) {
   if (!record) return [];
-  if (record.completedMissionTexts?.length) return record.completedMissionTexts;
-  return record.mission ? [record.mission.text] : [];
+  if (record.completedMissionIds?.length) return record.completedMissionIds;
+  const texts = record.completedMissionTexts?.length
+    ? record.completedMissionTexts
+    : record.mission?.text
+      ? [record.mission.text]
+      : [];
+  return texts.map(idForLegacyText).filter(Boolean);
+}
+
+// One stored record, brought up to the id-based shape. Returns the same object
+// when nothing needs changing so React can keep bailing out of re-renders.
+export function migrateStampRecord(record) {
+  if (!record || record.completedMissionIds) return record;
+  const next = { ...record, completedMissionIds: completedIdsFor(record) };
+  if (next.mission && !next.mission.id) {
+    const id = idForLegacyText(next.mission.text);
+    next.mission = id ? { ...next.mission, id } : next.mission;
+  }
+  // missionPhotos was keyed by mission text too.
+  if (record.missionPhotos) {
+    const rekeyed = {};
+    for (const [text, uri] of Object.entries(record.missionPhotos)) {
+      const id = idForLegacyText(text);
+      if (id) rekeyed[id] = uri;
+    }
+    next.missionPhotos = rekeyed;
+  }
+  delete next.completedMissionTexts;
+  return next;
 }
 
 // ---------------------------------------------------------------------------
@@ -382,11 +478,12 @@ export function buildCollectionProgress(stamps) {
       totals[cat] = (totals[cat] || 0) + 1;
     });
 
-    const completed = completedTextsFor(stamps[pref.id]);
+    const completed = completedIdsFor(stamps[pref.id]);
     if (!completed.length) continue;
     const completedCats = new Set();
-    for (const text of completed) {
-      const cat = classifyMission(text);
+    for (const m of missions) {
+      if (!completed.includes(m.id)) continue;
+      const cat = classifyMission(m.text);
       if (cat) completedCats.add(cat);
     }
     completedCats.forEach((cat) => {
@@ -412,14 +509,14 @@ export function buildCollectionDetail(cat, stamps = {}) {
   for (const pref of ALL_PREFS) {
     const missions = allMissionsForPref(pref).filter((m) => classifyMission(m.text) === cat);
     if (!missions.length) continue;
-    const completed = completedTextsFor(stamps[pref.id]);
+    const completed = completedIdsFor(stamps[pref.id]);
     rows.push({
       id: pref.id,
       capital: pref.capital,
       pref: pref.pref,
       region: pref.region,
       missions: missions.map((m) => m.text),
-      done: missions.some((m) => completed.includes(m.text)),
+      done: missions.some((m) => completed.includes(m.id)),
     });
   }
   return rows;

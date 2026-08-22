@@ -6,7 +6,8 @@
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
-    "build:android": "eas build -p android"
+    "build:android": "eas build -p android",
+    "check": "node scripts/check-missions.mjs"
   },
   "dependencies": {
     "@expo/metro-runtime": "~6.1.2",

@@ -72,7 +72,9 @@ import {
   allMissionsForPref,
   CITY_RANK_TIERS,
   cityRankFor,
-  completedTextsFor,
+  completedIdsFor,
+  migrateStampRecord,
+  missionById,
   buildCollectionProgress,
   buildCollectionDetail,
   distanceKm,
@@ -427,8 +429,8 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
   const rerollsLeft = REROLL_LIMIT - rerollsUsedToday;
 
   const cityMissions = allMissionsForPref(pref);
-  const completedTexts = completedTextsFor(record);
-  const cityDoneCount = completedTexts.length;
+  const completedIds = completedIdsFor(record);
+  const cityDoneCount = completedIds.length;
   const cityRank = cityRankFor(cityDoneCount);
   const allMissionsDone = cityDoneCount >= cityMissions.length;
 
@@ -441,8 +443,8 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
   // read as "my first mission's photo vanished." This looks it up from
   // whichever of the two fields actually holds it, so the checklist below
   // can keep showing every mission's own evidence permanently.
-  const photoForMissionText = (text) =>
-    record?.mission?.text === text ? record?.photo : record?.missionPhotos?.[text];
+  const photoForMissionId = (id) =>
+    record?.mission?.id === id ? record?.photo : record?.missionPhotos?.[id];
 
   // Whichever picker is on screen right now. Everything that reads or writes
   // "the photo the user is currently choosing" goes through these, so neither
@@ -471,7 +473,7 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
     if (isReroll && rerollsLeft <= 0) return;
     // Spending one of three daily changes only to be handed the same mission
     // back reads as a bug, so the one on screen is excluded from the re-roll.
-    const excluded = isReroll && mission?.text ? [...completedTexts, mission.text] : completedTexts;
+    const excluded = isReroll && mission?.id ? [...completedIds, mission.id] : completedIds;
     setSpinning(true);
     setMission(null);
     // Only the picker in play — re-rolling an extra mission must not wipe the
@@ -620,7 +622,7 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
     // The extra-mission screen demands evidence, so hand that evidence to the
     // record too — otherwise the photo the person was just required to supply
     // would be dropped on the floor (and orphaned on disk).
-    onAddProgress?.(pref.id, mission.text, extraPhoto);
+    onAddProgress?.(pref.id, mission.id, extraPhoto);
     onClose();
   };
 
@@ -640,9 +642,9 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
       photo,
       photoThumb,
       mission: finalMission,
-      completedMissionTexts: alreadyVisited
-        ? (record?.completedMissionTexts?.length ? record.completedMissionTexts : completedTexts)
-        : [finalMission.text],
+      completedMissionIds: alreadyVisited
+        ? (record?.completedMissionIds?.length ? record.completedMissionIds : completedIds)
+        : [finalMission.id],
     });
   };
 
@@ -684,10 +686,10 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
                 <Text style={styles.rankCount}>{cityDoneCount} / {cityMissions.length} ミッション達成</Text>
               </View>
               {cityMissions.map((m) => {
-                const done = completedTexts.includes(m.text);
-                const thumb = done ? photoForMissionText(m.text) : null;
+                const done = completedIds.includes(m.id);
+                const thumb = done ? photoForMissionId(m.id) : null;
                 return (
-                  <View key={m.text} style={[styles.checklistItem, styles.checklistRow]}>
+                  <View key={m.id} style={[styles.checklistItem, styles.checklistRow]}>
                     {thumb && <Image source={{ uri: thumb }} style={styles.checklistThumb} />}
                     <Text style={[styles.checklistText, done && styles.checklistTextDone]}>
                       {done ? "✓ " : "・"}{m.text}
@@ -822,7 +824,12 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
                 <Text style={[styles.missionTypeLabel, { color: MISSION_META[record.mission.type].color }]}>
                   {MISSION_META[record.mission.type].label}ミッション
                 </Text>
-                <Text style={styles.missionText}>{record.mission.text}</Text>
+                <Text style={styles.missionText}>
+                  {/* Resolve through the id so a mission whose wording was
+                      improved later shows the current text, not the snapshot
+                      taken on the day it was stamped. */}
+                  {missionById(pref.id, record.mission.id)?.text ?? record.mission.text}
+                </Text>
                 <Text style={styles.doneText}>
                   {record.mission.completedAt ? `${record.mission.completedAt}に達成` : "達成済み"}
                 </Text>
@@ -978,9 +985,25 @@ export default function App() {
 
   useEffect(() => {
     (async () => {
-      commitStamps(await loadAllWithPrefix(STAMP_PREFIX));
+      // Records saved before missions had ids keyed everything off the mission
+      // text. Bring them across once, on the way in, and write back only the
+      // ones that actually changed shape.
+      const raw = await loadAllWithPrefix(STAMP_PREFIX);
+      const migrated = {};
+      const writeBack = [];
+      for (const [id, rec] of Object.entries(raw)) {
+        const next = migrateStampRecord(rec);
+        migrated[id] = next;
+        if (next !== rec) writeBack.push([STAMP_PREFIX + id, JSON.stringify(next)]);
+      }
+      commitStamps(migrated);
       commitRerolls(await loadAllWithPrefix(ROLL_PREFIX));
       setLoaded(true);
+      if (writeBack.length) {
+        // After the first paint: the screen already has the migrated data, so
+        // persisting it is housekeeping and must not delay startup.
+        AsyncStorage.multiSet(writeBack).catch(() => {});
+      }
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -1045,19 +1068,19 @@ export default function App() {
     (previous?.memoPhotos || []).forEach(deletePhotoFile);
   };
 
-  const handleAddProgress = async (id, missionText, evidencePhoto) => {
+  const handleAddProgress = async (id, missionId, evidencePhoto) => {
     const existing = stampsRef.current[id];
     if (!existing?.visited) return;
-    const base = existing.completedMissionTexts?.length ? existing.completedMissionTexts : (existing.mission ? [existing.mission.text] : []);
-    if (base.includes(missionText)) {
+    const base = completedIdsFor(existing);
+    if (base.includes(missionId)) {
       deletePhotoFile(evidencePhoto);
       return;
     }
     const next = {
       ...existing,
-      completedMissionTexts: [...base, missionText],
+      completedMissionIds: [...base, missionId],
       missionPhotos: evidencePhoto
-        ? { ...(existing.missionPhotos || {}), [missionText]: evidencePhoto }
+        ? { ...(existing.missionPhotos || {}), [missionId]: evidencePhoto }
         : existing.missionPhotos,
     };
     commitStamps({ ...stampsRef.current, [id]: next });
