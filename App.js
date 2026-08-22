@@ -278,7 +278,7 @@ const CollectionRow = React.memo(function CollectionRow({ item, onPress }) {
             {item.done} / {item.total}
           </Text>
         </View>
-        <Text style={styles.collCardHint} numberOfLines={1}>{item.hint}</Text>
+        <Text style={styles.collCardHint} numberOfLines={2}>{item.hint}</Text>
         <View style={styles.collBarTrack}>
           <View style={[styles.collBarFill, { width: pct + "%" }, complete && styles.collBarFillDone]} />
         </View>
