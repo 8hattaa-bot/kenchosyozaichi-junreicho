@@ -285,7 +285,7 @@ const CollectionRow = React.memo(function CollectionRow({ item, onPress }) {
           <View style={[styles.collBarFill, { width: pct + "%" }, complete && styles.collBarFillDone]} />
         </View>
       </View>
-      <ChevronRight size={16} color="#9A9086" />
+      <ChevronRight size={16} color="#706962" />
     </TouchableOpacity>
   );
 });
@@ -301,8 +301,8 @@ function CollectionModal({ item, stamps, onClose, onPickCity }) {
         <View style={styles.modalSheet}>
           <WashiTexture opacity={0.06} />
           <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 28 }}>
-            <TouchableOpacity style={styles.modalClose} onPress={onClose}>
-              <X size={20} color="#5C544A" />
+            <TouchableOpacity style={styles.modalClose} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+              <X size={22} color="#5C544A" />
             </TouchableOpacity>
 
             <View style={styles.collHead}>
@@ -332,7 +332,7 @@ function CollectionModal({ item, stamps, onClose, onPickCity }) {
               >
                 <View style={styles.collCityMark}>
                   {r.done
-                    ? <CheckCircle2 size={16} color="#2E7D46" />
+                    ? <CheckCircle2 size={16} color="#2D7944" />
                     : <View style={styles.collCityDot} />}
                 </View>
                 <View style={{ flex: 1 }}>
@@ -344,7 +344,7 @@ function CollectionModal({ item, stamps, onClose, onPickCity }) {
                     <Text key={m} style={styles.collCityMission}>・{m}</Text>
                   ))}
                 </View>
-                <ChevronRight size={14} color="#9A9086" />
+                <ChevronRight size={14} color="#706962" />
               </TouchableOpacity>
             ))}
             <Text style={styles.collFootNote}>
@@ -382,6 +382,46 @@ const StampCard = React.memo(function StampCard({ pref, record, onPress }) {
 // ---------------------------------------------------------------------------
 // Mission modal — roulette, evidence (photo / location), stamping, and the
 // post-stamp "extra mission" flow for city-rank progression.
+// react-native-web ships Alert.alert as an empty function, so on the web dev
+// target every confirmation — and every permission error — silently does
+// nothing. Route through here so the browser gets a real dialog and the
+// destructive path can actually be exercised during development.
+function confirmDestructive({ title, message, confirmLabel, onConfirm }) {
+  if (Platform.OS === "web") {
+    if (typeof window !== "undefined" && window.confirm(title + "\n\n" + message)) onConfirm();
+    return;
+  }
+  Alert.alert(
+    title,
+    message,
+    [
+      { text: "キャンセル", style: "cancel" },
+      { text: confirmLabel, style: "destructive", onPress: onConfirm },
+    ],
+    { cancelable: true }
+  );
+}
+
+// Typing a date on a phone keyboard is miserable, so the field formats itself:
+// digits go in, hyphens appear on their own. Stored values stay plain
+// "YYYY-MM-DD" strings, exactly as before, so records written by older builds
+// keep working untouched — this only guards what gets written from now on.
+function formatDateInput(text) {
+  const d = String(text).replace(/[^0-9]/g, "").slice(0, 8);
+  if (d.length <= 4) return d;
+  if (d.length <= 6) return d.slice(0, 4) + "-" + d.slice(4);
+  return d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6);
+}
+
+// Not just the shape — 2026-02-31 matches the pattern but is not a real day.
+function isValidDate(text) {
+  if (!/^d{4}-d{2}-d{2}$/.test(text)) return false;
+  const [y, m, d] = text.split("-").map(Number);
+  if (m < 1 || m > 12 || d < 1) return false;
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
+
 // ---------------------------------------------------------------------------
 // NOTE: this component is only ever mounted with a non-null `pref`, and the
 // caller keys it by pref.id so every city starts from a clean slate. Both of
@@ -464,7 +504,39 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
   const missionRequired = !alreadyVisited;
   const inMissionAttempt = missionRequired || extraMode;
   const missionCleared = !inMissionAttempt || (mission && mission.completed);
-  const canConfirm = missionCleared && !photoBusy && !spinning;
+  const dateValid = isValidDate(date);
+  const canConfirm = missionCleared && !photoBusy && !spinning && (extraMode || dateValid);
+
+  // The lock hint used to say "ミッションを達成すると先に進めます" whatever the
+  // actual blocker was, including while a photo was still being written.
+  const lockReason = spinning
+    ? "ミッションを選んでいます…"
+    : photoBusy
+      ? "写真を読み込んでいます…"
+      : !missionCleared
+        ? "ミッションを達成すると先に進めます"
+        : "訪問日を正しく入力してください";
+
+  // Clearing a city throws away the stamp, the date, the note and every photo
+  // file behind it, with nothing to undo it. It used to fire on the first tap,
+  // from a button sitting 9px from the primary one. Say what will be lost.
+  const confirmClear = () => {
+    const losing = [];
+    if (record?.photo) losing.push("旅の一枚");
+    const evidenceCount = Object.keys(record?.missionPhotos || {}).length;
+    if (evidenceCount) losing.push("証拠写真" + evidenceCount + "枚");
+    if (record?.memoPhotos?.length) losing.push("メモの写真" + record.memoPhotos.length + "枚");
+    if (record?.memo) losing.push("メモ");
+    const detail = losing.length
+      ? losing.join("・") + "も削除されます。"
+      : "この都市の達成状況がすべて失われます。";
+    confirmDestructive({
+      title: pref.capital + "の記録を消しますか？",
+      message: detail + "元に戻すことはできません。",
+      confirmLabel: "削除する",
+      onConfirm: () => onClear(pref.id),
+    });
+  };
   const photoIsMissionEvidence =
     inMissionAttempt && mission && !mission.completed && (mission.type === "eat" || mission.type === "photo");
 
@@ -653,9 +725,14 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
       <View style={styles.modalBackdrop}>
         <View style={styles.modalSheet}>
         <WashiTexture opacity={0.06} />
-        <ScrollView contentContainerStyle={{ padding: 20, paddingBottom: 24 }}>
-          <TouchableOpacity style={styles.modalClose} onPress={onClose}>
-            <X size={20} color="#5C544A" />
+        <ScrollView
+          contentContainerStyle={{ padding: 20, paddingBottom: 24 }}
+          // Without this the first tap after typing only dismisses the
+          // keyboard, so 「記録を更新する」 needed two taps and looked broken.
+          keyboardShouldPersistTaps="handled"
+        >
+          <TouchableOpacity style={styles.modalClose} onPress={onClose} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+            <X size={22} color="#5C544A" />
           </TouchableOpacity>
 
           <View style={styles.modalHead}>
@@ -708,7 +785,7 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
           )}
           {alreadyVisited && !extraMode && allMissionsDone && (
             <View style={styles.completeBanner}>
-              <CheckCircle2 size={14} color="#2E7D46" />
+              <CheckCircle2 size={14} color="#2D7944" />
               <Text style={styles.completeBannerText}>この都市の全ミッションを制覇しました！</Text>
             </View>
           )}
@@ -718,7 +795,7 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
               <View style={styles.missionSectionHead}>
                 <Text style={styles.fieldLabel}>ミッション</Text>
                 {extraMode && (
-                  <TouchableOpacity onPress={cancelExtra}>
+                  <TouchableOpacity onPress={cancelExtra} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
                     <Text style={styles.cancelLink}>キャンセル</Text>
                   </TouchableOpacity>
                 )}
@@ -746,7 +823,7 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
                   <Text style={styles.missionText}>{mission.text}</Text>
 
                   {!mission.completed && mission.type === "eat" && (
-                    <Text style={styles.pendingText}>証拠として下の写真を追加すると自動で達成になります</Text>
+                    <Text style={styles.pendingText}>下の写真を追加すると自動で達成になります</Text>
                   )}
                   {!extraMode && mission.type === "eat" && (
                     <TextInput
@@ -777,20 +854,20 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
                       </TouchableOpacity>
                       {geoStatus === "far" && geoDistance != null && (
                         <Text style={[styles.geoText, styles.geoTextWarning]}>
-                          目的地まで約{geoDistance.toFixed(1)}km。もう少し近づいてね
+                          目的地まで約{geoDistance.toFixed(1)}km。もう少し近づいてください
                         </Text>
                       )}
                       {geoStatus === "error" && (
                         <Text style={[styles.geoText, styles.geoTextWarning]}>
-                          位置情報を取得できませんでした。設定を確認してください
-                          {geoErrorDetail ? `（詳細: ${geoErrorDetail}）` : ""}
+                          位置情報を取得できませんでした。端末の位置情報をオンにして、
+                          屋外で試してみてください{geoErrorDetail ? `（${geoErrorDetail}）` : ""}
                         </Text>
                       )}
                     </View>
                   )}
                   {mission.completed && (
                     <View style={styles.doneRow}>
-                      <CheckCircle2 size={13} color="#2E7D46" />
+                      <CheckCircle2 size={13} color="#2D7944" />
                       <Text style={styles.doneText}>
                         ミッション達成（証拠を保存しました）
                         {mission.type === "location" && mission.distanceKm != null &&
@@ -801,8 +878,9 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
 
                   {!mission.completed && (
                     rerollsLeft > 0 ? (
-                      <TouchableOpacity onPress={() => spin(true)}>
-                        <Text style={styles.rerollLink}>別のミッションにする（本日あと{rerollsLeft}回）</Text>
+                      <TouchableOpacity style={styles.rerollBtn} onPress={() => spin(true)} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
+                        <RotateCcw size={13} color="#5C544A" />
+                        <Text style={styles.rerollBtnText}>別のミッションにする（本日あと{rerollsLeft}回）</Text>
                       </TouchableOpacity>
                     ) : (
                       <Text style={styles.rerollLimitText}>
@@ -875,7 +953,20 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
           {!extraMode && (
             <>
               <Text style={styles.fieldLabel}>訪問日</Text>
-              <TextInput style={styles.dateInput} value={date} onChangeText={setDate} placeholder="YYYY-MM-DD" />
+              <TextInput
+                style={[styles.dateInput, !dateValid && styles.inputInvalid]}
+                value={date}
+                onChangeText={(t) => setDate(formatDateInput(t))}
+                placeholder="YYYY-MM-DD"
+                keyboardType="number-pad"
+                inputMode="numeric"
+                maxLength={10}
+              />
+              {!dateValid && (
+                <Text style={styles.inputError}>
+                  数字8桁で入力してください（例：20260823 → 2026-08-23）
+                </Text>
+              )}
               <Text style={styles.fieldLabel}>ひとことメモ（任意）</Text>
               <TextInput
                 style={styles.memoInput}
@@ -900,7 +991,7 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
                       <TouchableOpacity
                         style={styles.memoPhotoRemove}
                         onPress={() => removeMemoPhotoAt(idx)}
-                        hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
+                        hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
                       >
                         <X size={12} color="#FBF3E4" />
                       </TouchableOpacity>
@@ -927,12 +1018,6 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
           )}
 
           <View style={styles.actionsRow}>
-            {alreadyVisited && !extraMode && (
-              <TouchableOpacity style={styles.ghostBtn} onPress={() => onClear(pref.id)}>
-                <RotateCcw size={15} color="#5C544A" />
-                <Text style={styles.ghostBtnText}>記録を消す</Text>
-              </TouchableOpacity>
-            )}
             <TouchableOpacity
               style={[styles.primaryBtn, !canConfirm && styles.btnDisabled]}
               disabled={!canConfirm}
@@ -940,12 +1025,22 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
             >
               <Sparkles size={15} color="#FBF3E4" />
               <Text style={styles.primaryBtnText}>
-                {extraMode ? "この達成を記録する" : alreadyVisited ? "更新して押印" : "スタンプを押す"}
+                {extraMode ? "この達成を記録する" : alreadyVisited ? "記録を更新する" : "スタンプを押す"}
               </Text>
             </TouchableOpacity>
           </View>
           {!canConfirm && (
-            <Text style={styles.lockHint}>ミッションを達成すると先に進めます</Text>
+            <Text style={styles.lockHint}>{lockReason}</Text>
+          )}
+
+          {/* Kept well away from 「記録を更新する」, and behind a confirm step. */}
+          {alreadyVisited && !extraMode && (
+            <View style={styles.dangerZone}>
+              <TouchableOpacity style={styles.dangerBtn} onPress={confirmClear}>
+                <RotateCcw size={15} color="#9A2E1F" />
+                <Text style={styles.dangerBtnText}>この都市の記録を消す</Text>
+              </TouchableOpacity>
+            </View>
           )}
         </ScrollView>
         </View>
@@ -1130,6 +1225,13 @@ export default function App() {
           ))}
         </ScrollView>
 
+        {!loaded && (
+          <View style={styles.loadingBox}>
+            <ActivityIndicator color="#BD3B28" />
+            <Text style={styles.loadingText}>巡礼帳を開いています…</Text>
+          </View>
+        )}
+
         {loaded && visibleRegions.map((region) => (
           <View key={region.name} style={{ marginBottom: 20 }}>
             <Text style={styles.regionTitle}>{region.name}</Text>
@@ -1211,9 +1313,9 @@ const styles = StyleSheet.create({
   headerSub: { fontSize: 12, color: "#5C544A", textAlign: "center", marginBottom: 16 },
   passport: { backgroundColor: "#223A5E", borderRadius: 16, padding: 16, marginBottom: 16 },
   passportRank: { color: "#F4EAD0", fontSize: 18, fontWeight: "700" },
-  passportCount: { color: "#B8923F", fontSize: 20, fontWeight: "800", marginTop: 4 },
+  passportCount: { color: "#CFA84E", fontSize: 20, fontWeight: "800", marginTop: 4 },
   passportNext: { color: "rgba(239,230,210,0.7)", fontSize: 11, marginTop: 6 },
-  tab: { paddingHorizontal: 14, paddingVertical: 7, borderRadius: 999, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", marginRight: 8, backgroundColor: "rgba(255,255,255,0.5)" },
+  tab: { paddingHorizontal: 14, paddingVertical: 12, borderRadius: 999, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", marginRight: 8, backgroundColor: "rgba(255,255,255,0.5)" },
   tabActive: { backgroundColor: "#BD3B28", borderColor: "#BD3B28" },
   tabText: { fontSize: 13, fontWeight: "700", color: "#5C544A" },
   tabTextActive: { color: "#FBF3E4" },
@@ -1224,11 +1326,11 @@ const styles = StyleSheet.create({
   cardPhoto: { width: 56, height: 56, borderRadius: 10, marginBottom: 6 },
   cardEmpty: { width: 44, height: 44, borderRadius: 22, borderWidth: 1.5, borderColor: "rgba(43,38,33,0.2)", borderStyle: "dashed", alignItems: "center", justifyContent: "center", marginBottom: 6 },
   cardCapital: { fontSize: 12, fontWeight: "700", color: "#2B2621", textAlign: "center" },
-  cardPref: { fontSize: 10, color: "#5C544A" },
-  cardDate: { fontSize: 9, color: "#9A2E1F", fontWeight: "700", marginTop: 2 },
+  cardPref: { fontSize: 11, color: "#5C544A" },
+  cardDate: { fontSize: 11, color: "#9A2E1F", fontWeight: "700", marginTop: 2 },
   hankoWrap: { alignItems: "center", justifyContent: "center", marginBottom: 6 },
-  collectionTitle: { fontSize: 15, fontWeight: "700", color: "#16283F", marginTop: 10, marginBottom: 6 },
-  collectionLead: { fontSize: 11.5, color: "#5C544A", lineHeight: 17, marginBottom: 10 },
+  collectionTitle: { fontSize: 16, fontWeight: "700", color: "#16283F", marginTop: 10, marginBottom: 6 },
+  collectionLead: { fontSize: 12, color: "#5C544A", lineHeight: 17, marginBottom: 10 },
   collCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.6)", borderRadius: 12, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", padding: 10, marginBottom: 8 },
   collIconWrap: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(184,146,63,0.18)", borderWidth: 1, borderColor: "rgba(184,146,63,0.4)" },
   collIconWrapLarge: { width: 46, height: 46, borderRadius: 23 },
@@ -1236,28 +1338,28 @@ const styles = StyleSheet.create({
   collCardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
   collCardLabel: { fontSize: 13, fontWeight: "800", color: "#16283F" },
   collCardCount: { fontSize: 12, fontWeight: "800", color: "#5C544A" },
-  collCardCountDone: { color: "#B8923F" },
-  collCardHint: { fontSize: 10.5, color: "#5C544A", marginTop: 1, marginBottom: 5 },
+  collCardCountDone: { color: "#785E27" },
+  collCardHint: { fontSize: 11, color: "#5C544A", marginTop: 1, marginBottom: 5 },
   collBarTrack: { height: 5, borderRadius: 3, backgroundColor: "rgba(43,38,33,0.12)", overflow: "hidden" },
   collBarFill: { height: 5, borderRadius: 3, backgroundColor: "#BD3B28" },
   collBarFillDone: { backgroundColor: "#B8923F" },
   collHead: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 14 },
   collSummary: { flexDirection: "row", alignItems: "baseline", gap: 10, backgroundColor: "rgba(184,146,63,0.12)", borderWidth: 1, borderColor: "rgba(184,146,63,0.3)", borderRadius: 10, padding: 12, marginBottom: 16 },
   collSummaryCount: { fontSize: 18, fontWeight: "800", color: "#16283F" },
-  collSummaryNote: { fontSize: 11.5, color: "#5C544A", fontWeight: "700" },
+  collSummaryNote: { fontSize: 12, color: "#5C544A", fontWeight: "700" },
   collListLabel: { fontSize: 12, fontWeight: "700", color: "#5C544A", marginBottom: 8 },
   collCityRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "rgba(255,255,255,0.55)", borderRadius: 10, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", padding: 10, marginBottom: 6 },
   collCityRowDone: { backgroundColor: "rgba(46,125,70,0.08)", borderColor: "rgba(46,125,70,0.3)" },
   collCityMark: { width: 16, alignItems: "center", paddingTop: 1 },
   collCityDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(43,38,33,0.3)", borderStyle: "dashed" },
   collCityName: { fontSize: 13, fontWeight: "700", color: "#2B2621" },
-  collCityRegion: { fontSize: 10, fontWeight: "400", color: "#9A9086" },
+  collCityRegion: { fontSize: 11, fontWeight: "400", color: "#706962" },
   collCityMission: { fontSize: 11, color: "#5C544A", marginTop: 2, lineHeight: 16 },
-  collFootNote: { fontSize: 10.5, color: "#9A9086", marginTop: 8, textAlign: "center" },
+  collFootNote: { fontSize: 11, color: "#706962", marginTop: 8, textAlign: "center" },
 
   modalBackdrop: { flex: 1, backgroundColor: "rgba(22,20,17,0.5)", justifyContent: "flex-end" },
   modalSheet: { backgroundColor: "#F3ECDC", borderTopLeftRadius: 20, borderTopRightRadius: 20, maxHeight: "88%", overflow: "hidden" },
-  modalClose: { alignSelf: "flex-end", padding: 4 },
+  modalClose: { alignSelf: "flex-end", padding: 11 },
   modalHead: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
   modalCapital: { fontSize: 20, fontWeight: "700", color: "#16283F" },
   modalPref: { fontSize: 12, color: "#5C544A", marginTop: 2 },
@@ -1270,29 +1372,40 @@ const styles = StyleSheet.create({
   checklistItem: { marginBottom: 3 },
   checklistRow: { flexDirection: "row", alignItems: "center", gap: 6 },
   checklistThumb: { width: 34, height: 34, borderRadius: 6 },
-  checklistText: { fontSize: 11.5, color: "#5C544A" },
+  checklistText: { fontSize: 12, color: "#5C544A" },
   checklistTextDone: { color: "#2B2621", fontWeight: "700" },
   rouletteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1.5, borderColor: "#B8923F", borderStyle: "dashed", borderRadius: 10, padding: 14, marginBottom: 14, backgroundColor: "rgba(184,146,63,0.08)" },
   rouletteBtnText: { fontSize: 13, fontWeight: "800", color: "#16283F" },
   completeBanner: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(46,125,70,0.1)", borderColor: "rgba(46,125,70,0.3)", borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 14 },
-  completeBannerText: { fontSize: 12, fontWeight: "800", color: "#2E7D46" },
+  completeBannerText: { fontSize: 12, fontWeight: "800", color: "#2D7944" },
   missionSection: { marginBottom: 14 },
   missionSectionHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
   fieldLabel: { fontSize: 12, fontWeight: "700", color: "#5C544A", marginBottom: 6, marginTop: 6 },
   cancelLink: { fontSize: 11, fontWeight: "700", color: "#5C544A", textDecorationLine: "underline" },
   missionCard: { borderRadius: 12, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", backgroundColor: "rgba(255,255,255,0.6)", padding: 12 },
   missionCardThumb: { width: "100%", height: 140, borderRadius: 8, marginTop: 8 },
-  missionTypeLabel: { fontSize: 10, fontWeight: "800" },
+  missionTypeLabel: { fontSize: 11, fontWeight: "800" },
   missionText: { fontSize: 14, fontWeight: "700", color: "#2B2621", marginTop: 3, marginBottom: 6 },
   pendingText: { fontSize: 11, color: "#5C544A", marginBottom: 6 },
-  noteInput: { borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", borderRadius: 8, padding: 8, fontSize: 12.5, backgroundColor: "rgba(255,255,255,0.7)", marginBottom: 6 },
-  smallBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#BD3B28", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8, alignSelf: "flex-start" },
+  noteInput: { borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", borderRadius: 8, padding: 8, fontSize: 13, backgroundColor: "rgba(255,255,255,0.7)", marginBottom: 6 },
+  smallBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#BD3B28", borderRadius: 999, paddingHorizontal: 14, paddingVertical: 14, alignSelf: "flex-start" },
   smallBtnText: { color: "#FBF3E4", fontSize: 12, fontWeight: "700" },
   geoText: { fontSize: 14, fontWeight: "600", color: "#5C544A", marginTop: 6, lineHeight: 19 },
   geoTextWarning: { color: "#9A2E1F" },
   doneRow: { flexDirection: "row", alignItems: "center", gap: 5 },
-  doneText: { fontSize: 11, fontWeight: "800", color: "#2E7D46" },
-  rerollLink: { fontSize: 11, fontWeight: "700", color: "#5C544A", textDecorationLine: "underline", marginTop: 8 },
+  doneText: { fontSize: 11, fontWeight: "800", color: "#2D7944" },
+  // Was a bare 24px-tall text link for an action people only get three of a
+  // day. Given a border and real padding it reads as — and behaves like — a
+  // button.
+  rerollBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, borderWidth: 1, borderColor: "rgba(43,38,33,0.2)", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 13, marginTop: 10, backgroundColor: "rgba(255,255,255,0.5)" },
+  rerollBtnText: { fontSize: 12, fontWeight: "700", color: "#5C544A" },
+  dangerZone: { marginTop: 22, paddingTop: 14, borderTopWidth: 1, borderTopColor: "rgba(43,38,33,0.14)", alignItems: "center" },
+  dangerBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "rgba(154,46,31,0.4)", borderRadius: 999, paddingHorizontal: 16, paddingVertical: 13 },
+  dangerBtnText: { fontSize: 12, fontWeight: "700", color: "#9A2E1F" },
+  inputInvalid: { borderColor: "#9A2E1F", borderWidth: 1.5 },
+  inputError: { fontSize: 11, color: "#9A2E1F", marginTop: -6, marginBottom: 10 },
+  loadingBox: { alignItems: "center", gap: 8, paddingVertical: 40 },
+  loadingText: { fontSize: 12, color: "#5C544A" },
   rerollLimitText: { fontSize: 11, fontWeight: "700", color: "#9A2E1F", marginTop: 8 },
   photoPreviewWrap: { borderRadius: 10, overflow: "hidden", borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", marginBottom: 6 },
   photoPreview: { width: "100%", height: 180 },
@@ -1316,6 +1429,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   memoPhotoAddBtn: {
+    minHeight: 44,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
@@ -1327,12 +1441,14 @@ const styles = StyleSheet.create({
     paddingVertical: 11,
     marginBottom: 10,
   },
-  memoPhotoAddText: { fontSize: 12.5, fontWeight: "700", color: "#5C544A" },
+  memoPhotoAddText: { fontSize: 13, fontWeight: "700", color: "#5C544A" },
   actionsRow: { flexDirection: "row", justifyContent: "flex-end", gap: 8, marginTop: 6 },
-  ghostBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", borderRadius: 999, paddingHorizontal: 12, paddingVertical: 8 },
+  ghostBtn: { flexDirection: "row", alignItems: "center", gap: 6, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", borderRadius: 999, paddingHorizontal: 14, paddingVertical: 13 },
   ghostBtnText: { fontSize: 12, fontWeight: "700", color: "#5C544A" },
-  primaryBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#BD3B28", borderRadius: 999, paddingHorizontal: 16, paddingVertical: 10 },
+  primaryBtn: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#BD3B28", borderRadius: 999, paddingHorizontal: 18, paddingVertical: 13 },
   primaryBtnText: { color: "#FBF3E4", fontSize: 13, fontWeight: "700" },
-  btnDisabled: { opacity: 0.5 },
+  // opacity: 0.5 washed the white label out along with the fill. A solid
+  // muted colour keeps the text at 5.29:1 while still reading as disabled.
+  btnDisabled: { backgroundColor: "#6B645C" },
   lockHint: { fontSize: 11, color: "#9A2E1F", textAlign: "right", marginTop: 6 },
 });
