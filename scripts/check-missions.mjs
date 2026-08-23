@@ -12,7 +12,7 @@ import { fileURLToPath } from "url";
 import {
   ALL_PREFS, LOCATION_TARGETS, LOCATION_RADIUS_KM,
   allMissionsForPref, buildCollectionProgress, buildCollectionDetail, classifyMission,
-  formatDateInput, isValidDate, todayStr,
+  formatDateInput, isValidDate, todayStr, migrateStampRecord,
 } from "../data.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -94,6 +94,28 @@ for (const [inp, want] of formats) {
 // 入力欄に今日の日付が入った状態で、そのまま押印できることの担保
 if (!isValidDate(formatDateInput(todayStr()))) fail("今日の日付が整形→検証を通らない（押印できなくなる）");
 console.log("  有効 " + mustPass.length + "件が通り、無効 " + mustFail.length + "件を弾き、整形 " + formats.length + "件が一致");
+
+console.log("\n== 旧レコードの移行 ==");
+{
+  // 自分の都市のミッションは拾う
+  const own = migrateStampRecord(
+    { visited: true, completedMissionTexts: ["「ジンギスカン」を味わう"] }, "hokkaido");
+  if (own.completedMissionIds[0] !== "hokkaido:eat:1") fail("自都市の旧文言を拾えていない: " + JSON.stringify(own.completedMissionIds));
+  // 別都市のミッション文が紛れ込んでも、その都市のIDは付けない
+  const foreign = migrateStampRecord(
+    { visited: true, mission: { type: "photo", text: "くまモンスクエアのくまモン装飾を撮る" },
+      completedMissionTexts: ["くまモンスクエアのくまモン装飾を撮る"] }, "aomori");
+  if (foreign.completedMissionIds.length) fail("別都市のIDを引き継いだ: " + JSON.stringify(foreign.completedMissionIds));
+  if (foreign.mission.id) fail("mission.id に別都市のIDが付いた: " + foreign.mission.id);
+  // 差し替えで消えたミッションは引き継がない
+  const retired = migrateStampRecord(
+    { visited: true, completedMissionTexts: ["秋田犬を探して撮る（見つけたら幸運）"] }, "akita");
+  if (retired.completedMissionIds.length) fail("廃止ミッションを引き継いだ");
+  // 移行済みレコードは作り直さない
+  const already = { visited: true, completedMissionIds: ["hokkaido:eat:0"] };
+  if (migrateStampRecord(already, "hokkaido") !== already) fail("移行済みを無駄に再生成している");
+  console.log("  自都市は拾い、別都市IDと廃止ミッションは弾き、移行済みは再処理しない");
+}
 
 console.log("\n== コレクション ==");
 for (const c of buildCollectionProgress({})) {

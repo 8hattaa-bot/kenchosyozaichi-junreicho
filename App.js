@@ -509,7 +509,7 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
   const rerollsLeft = REROLL_LIMIT - rerollsUsedToday;
 
   const cityMissions = allMissionsForPref(pref);
-  const completedIds = completedIdsFor(record);
+  const completedIds = completedIdsFor(record, pref.id);
   const cityDoneCount = completedIds.length;
   const cityRank = cityRankFor(cityDoneCount);
   const allMissionsDone = cityDoneCount >= cityMissions.length;
@@ -1151,7 +1151,7 @@ export default function App() {
       const migrated = {};
       const writeBack = [];
       for (const [id, rec] of Object.entries(raw)) {
-        const next = migrateStampRecord(rec);
+        const next = migrateStampRecord(rec, id);
         migrated[id] = next;
         if (next !== rec) writeBack.push([STAMP_PREFIX + id, JSON.stringify(next)]);
       }
@@ -1230,7 +1230,7 @@ export default function App() {
   const handleAddProgress = async (id, missionId, evidencePhoto) => {
     const existing = stampsRef.current[id];
     if (!existing?.visited) return;
-    const base = completedIdsFor(existing);
+    const base = completedIdsFor(existing, id);
     if (base.includes(missionId)) {
       deletePhotoFile(evidencePhoto);
       return;
@@ -1398,7 +1398,10 @@ const styles = StyleSheet.create({
   collCard: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "rgba(255,255,255,0.6)", borderRadius: 12, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", padding: 10, marginBottom: 8 },
   collIconWrap: { width: 34, height: 34, borderRadius: 17, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(184,146,63,0.18)", borderWidth: 1, borderColor: "rgba(184,146,63,0.4)" },
   collIconWrapLarge: { width: 46, height: 46, borderRadius: 23 },
-  collIconWrapDone: { backgroundColor: "#B8923F", borderColor: "#B8923F" },
+  // #B8923F under the cream icon was only 2.64:1 — completing a collection
+  // made its icon *harder* to see than the unfinished state. Same gold as the
+  // done count, which carries the light glyph at 5.55:1.
+  collIconWrapDone: { backgroundColor: "#785E27", borderColor: "#785E27" },
   collCardTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "baseline" },
   collCardLabel: { fontSize: 13, fontWeight: "800", color: "#16283F" },
   collCardCount: { fontSize: 12, fontWeight: "800", color: "#5C544A" },

@@ -409,15 +409,26 @@ const TEXT_TO_ID = (() => {
   return map;
 })();
 
-function idForLegacyText(text) {
-  return TEXT_TO_ID[text] || LEGACY_MISSION_ALIASES[text] || null;
+function idForLegacyText(text, prefId) {
+  const id = TEXT_TO_ID[text] || LEGACY_MISSION_ALIASES[text] || null;
+  if (!id) return null;
+  // A record can only ever have completed missions belonging to its own city.
+  // Anything else is a text collision, and crediting it would attach one
+  // city's record to another city's mission.
+  if (prefId && !id.startsWith(prefId + ":")) return null;
+  return id;
 }
 
 // The completed mission ids on a record, migrating older text-keyed records on
 // the way through. A text that matches nothing is dropped rather than guessed
 // at: it means that mission was replaced by a different one, and the person
 // never did the new one.
-export function completedIdsFor(record) {
+// `prefId` scopes the lookup to the city the record belongs to. Mission texts
+// are unique across the whole table today, so an unscoped lookup happens to
+// land on the right city — but nothing enforces that, and a text that ever
+// appeared in two cities would migrate a record onto another city's mission.
+// Passing the owner in makes the wrong answer impossible rather than unlikely.
+export function completedIdsFor(record, prefId) {
   if (!record) return [];
   if (record.completedMissionIds?.length) return record.completedMissionIds;
   const texts = record.completedMissionTexts?.length
@@ -425,23 +436,23 @@ export function completedIdsFor(record) {
     : record.mission?.text
       ? [record.mission.text]
       : [];
-  return texts.map(idForLegacyText).filter(Boolean);
+  return texts.map((t) => idForLegacyText(t, prefId)).filter(Boolean);
 }
 
 // One stored record, brought up to the id-based shape. Returns the same object
 // when nothing needs changing so React can keep bailing out of re-renders.
-export function migrateStampRecord(record) {
+export function migrateStampRecord(record, prefId) {
   if (!record || record.completedMissionIds) return record;
-  const next = { ...record, completedMissionIds: completedIdsFor(record) };
+  const next = { ...record, completedMissionIds: completedIdsFor(record, prefId) };
   if (next.mission && !next.mission.id) {
-    const id = idForLegacyText(next.mission.text);
+    const id = idForLegacyText(next.mission.text, prefId);
     next.mission = id ? { ...next.mission, id } : next.mission;
   }
   // missionPhotos was keyed by mission text too.
   if (record.missionPhotos) {
     const rekeyed = {};
     for (const [text, uri] of Object.entries(record.missionPhotos)) {
-      const id = idForLegacyText(text);
+      const id = idForLegacyText(text, prefId);
       if (id) rekeyed[id] = uri;
     }
     next.missionPhotos = rekeyed;
@@ -504,7 +515,7 @@ export function buildCollectionProgress(stamps) {
       totals[cat] = (totals[cat] || 0) + 1;
     });
 
-    const completed = completedIdsFor(stamps[pref.id]);
+    const completed = completedIdsFor(stamps[pref.id], pref.id);
     if (!completed.length) continue;
     const completedCats = new Set();
     for (const m of missions) {
@@ -535,7 +546,7 @@ export function buildCollectionDetail(cat, stamps = {}) {
   for (const pref of ALL_PREFS) {
     const missions = allMissionsForPref(pref).filter((m) => classifyMission(m.text) === cat);
     if (!missions.length) continue;
-    const completed = completedIdsFor(stamps[pref.id]);
+    const completed = completedIdsFor(stamps[pref.id], pref.id);
     rows.push({
       id: pref.id,
       capital: pref.capital,
