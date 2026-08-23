@@ -58,6 +58,8 @@ import Trees from "lucide-react-native/icons/trees";
 import Landmark from "lucide-react-native/icons/landmark";
 import TowerControl from "lucide-react-native/icons/tower-control";
 import ChevronRight from "lucide-react-native/icons/chevron-right";
+import ChevronLeft from "lucide-react-native/icons/chevron-left";
+import Maximize2 from "lucide-react-native/icons/maximize-2";
 
 import {
   REGIONS,
@@ -422,6 +424,56 @@ function isValidDate(text) {
   return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 }
 
+// Every photo in this app used to be a plain <Image>: a meal shot rendered at
+// 34px in the checklist, a memo photo at 74px, both cropped to a square by the
+// default "cover" resize. There was nowhere to see the actual picture. Tapping
+// any of them now opens this.
+function PhotoViewer({ photos, index, onClose }) {
+  const [i, setI] = useState(index);
+  const current = photos[i];
+  const many = photos.length > 1;
+  if (!current) return null;
+  return (
+    <Modal visible animationType="fade" transparent onRequestClose={onClose}>
+      <View style={styles.viewerBackdrop}>
+        {/* Tapping the background closes, the way a photo viewer is expected
+            to behave. The image itself sits above this and swallows taps. */}
+        <TouchableOpacity style={StyleSheet.absoluteFill} activeOpacity={1} onPress={onClose} />
+
+        <Image source={{ uri: current }} style={styles.viewerImage} resizeMode="contain" />
+
+        <TouchableOpacity
+          style={styles.viewerClose}
+          onPress={onClose}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+        >
+          <X size={24} color="#FBF3E4" />
+        </TouchableOpacity>
+
+        {many && (
+          <>
+            <TouchableOpacity
+              style={[styles.viewerNav, styles.viewerNavLeft]}
+              onPress={() => setI((n) => (n - 1 + photos.length) % photos.length)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <ChevronLeft size={26} color="#FBF3E4" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.viewerNav, styles.viewerNavRight]}
+              onPress={() => setI((n) => (n + 1) % photos.length)}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <ChevronRight size={26} color="#FBF3E4" />
+            </TouchableOpacity>
+            <Text style={styles.viewerCount}>{i + 1} / {photos.length}</Text>
+          </>
+        )}
+      </View>
+    </Modal>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // NOTE: this component is only ever mounted with a non-null `pref`, and the
 // caller keys it by pref.id so every city starts from a clean slate. Both of
@@ -447,6 +499,12 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
   // from the single evidence photo above, which has a fixed job (proving the
   // mission). Any number of these, purely for the memory.
   const [memoPhotos, setMemoPhotos] = useState(record?.memoPhotos || []);
+  // { photos: [uri], index } — 全部のサムネイルからここに集約する
+  const [viewer, setViewer] = useState(null);
+  const openViewer = (photos, index = 0) => {
+    const list = (Array.isArray(photos) ? photos : [photos]).filter(Boolean);
+    if (list.length) setViewer({ photos: list, index });
+  };
   const [photoBusy, setPhotoBusy] = useState(false);
   const [memoPhotoBusy, setMemoPhotoBusy] = useState(false);
 
@@ -767,7 +825,11 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
                 const thumb = done ? photoForMissionId(m.id) : null;
                 return (
                   <View key={m.id} style={[styles.checklistItem, styles.checklistRow]}>
-                    {thumb && <Image source={{ uri: thumb }} style={styles.checklistThumb} />}
+                    {thumb && (
+                      <TouchableOpacity onPress={() => openViewer(thumb)} accessibilityLabel="証拠写真を拡大">
+                        <Image source={{ uri: thumb }} style={styles.checklistThumb} />
+                      </TouchableOpacity>
+                    )}
                     <Text style={[styles.checklistText, done && styles.checklistTextDone]}>
                       {done ? "✓ " : "・"}{m.text}
                     </Text>
@@ -912,7 +974,12 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
                   {record.mission.completedAt ? `${record.mission.completedAt}に達成` : "達成済み"}
                 </Text>
                 {record.mission.note && <Text style={styles.pendingText}>メモ：{record.mission.note}</Text>}
-                {record.photo && <Image source={{ uri: record.photo }} style={styles.missionCardThumb} />}
+                {record.photo && (
+                  <TouchableOpacity onPress={() => openViewer(record.photo)} accessibilityLabel="写真を拡大">
+                    <Image source={{ uri: record.photo }} style={styles.missionCardThumb} />
+                    <View style={styles.zoomBadge}><Maximize2 size={13} color="#FBF3E4" /></View>
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
           )}
@@ -924,7 +991,10 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
           </Text>
           {activePhoto ? (
             <View style={styles.photoPreviewWrap}>
-              <Image source={{ uri: activePhoto }} style={styles.photoPreview} />
+              <TouchableOpacity onPress={() => openViewer(activePhoto)} accessibilityLabel="写真を拡大">
+                <Image source={{ uri: activePhoto }} style={styles.photoPreview} />
+                <View style={styles.zoomBadge}><Maximize2 size={13} color="#FBF3E4" /></View>
+              </TouchableOpacity>
               <View style={styles.photoActions}>
                 <TouchableOpacity style={styles.ghostBtn} onPress={pickPhoto}>
                   <Text style={styles.ghostBtnText}>差し替え</Text>
@@ -987,7 +1057,9 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
                 >
                   {memoPhotos.map((uri, idx) => (
                     <View key={uri + "#" + idx} style={styles.memoPhotoItem}>
-                      <Image source={{ uri }} style={styles.memoPhotoThumb} />
+                      <TouchableOpacity onPress={() => openViewer(memoPhotos, idx)} accessibilityLabel="メモの写真を拡大">
+                        <Image source={{ uri }} style={styles.memoPhotoThumb} />
+                      </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.memoPhotoRemove}
                         onPress={() => removeMemoPhotoAt(idx)}
@@ -1045,6 +1117,10 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
         </ScrollView>
         </View>
       </View>
+
+      {viewer && (
+        <PhotoViewer photos={viewer.photos} index={viewer.index} onClose={() => setViewer(null)} />
+      )}
     </Modal>
   );
 }
@@ -1404,6 +1480,16 @@ const styles = StyleSheet.create({
   dangerBtnText: { fontSize: 12, fontWeight: "700", color: "#9A2E1F" },
   inputInvalid: { borderColor: "#9A2E1F", borderWidth: 1.5 },
   inputError: { fontSize: 11, color: "#9A2E1F", marginTop: -6, marginBottom: 10 },
+  viewerBackdrop: { flex: 1, backgroundColor: "rgba(12,10,8,0.94)", alignItems: "center", justifyContent: "center" },
+  // contain, not cover: the point of opening this is to see the whole frame.
+  viewerImage: { width: "100%", height: "82%" },
+  viewerClose: { position: "absolute", top: 40, right: 18, width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  viewerNav: { position: "absolute", top: "48%", width: 44, height: 44, alignItems: "center", justifyContent: "center", borderRadius: 22, backgroundColor: "rgba(255,255,255,0.12)" },
+  viewerNavLeft: { left: 12 },
+  viewerNavRight: { right: 12 },
+  viewerCount: { position: "absolute", bottom: 42, color: "#FBF3E4", fontSize: 13, fontWeight: "700" },
+  // Small corner marker so the bigger previews read as tappable.
+  zoomBadge: { position: "absolute", right: 8, bottom: 8, width: 26, height: 26, borderRadius: 13, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(12,10,8,0.55)" },
   loadingBox: { alignItems: "center", gap: 8, paddingVertical: 40 },
   loadingText: { fontSize: 12, color: "#5C544A" },
   rerollLimitText: { fontSize: 11, fontWeight: "700", color: "#9A2E1F", marginTop: 8 },
