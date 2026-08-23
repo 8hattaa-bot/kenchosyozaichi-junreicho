@@ -142,6 +142,32 @@ export function todayStr() {
   return `${y}-${m}-${dd}`;
 }
 
+// Typing a date on a phone keyboard is miserable, so the visit-date field
+// formats itself: digits go in, hyphens appear on their own. Stored values stay
+// plain "YYYY-MM-DD" strings exactly as before, so records written by older
+// builds keep working — this only guards what gets written from now on.
+//
+// These live here, next to todayStr, rather than in App.js because they are
+// pure string logic with no React in them, which is what lets `npm run check`
+// test them. That matters: a mangled backslash once turned the pattern below
+// into /^d{4}-d{2}-d{2}$/, which matches no real date at all, and quietly made
+// the 「スタンプを押す」 button impossible to enable.
+export function formatDateInput(text) {
+  const d = String(text).replace(/[^0-9]/g, "").slice(0, 8);
+  if (d.length <= 4) return d;
+  if (d.length <= 6) return d.slice(0, 4) + "-" + d.slice(4);
+  return d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6);
+}
+
+// Not just the shape — 2026-02-31 matches the pattern but is not a real day.
+export function isValidDate(text) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(text)) return false;
+  const [y, m, d] = text.split("-").map(Number);
+  if (m < 1 || m > 12 || d < 1) return false;
+  const dt = new Date(y, m - 1, d);
+  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
+}
+
 
 const EAT_MISSIONS = [
   "ご当地グルメを1品食べる",

@@ -12,6 +12,7 @@ import { fileURLToPath } from "url";
 import {
   ALL_PREFS, LOCATION_TARGETS, LOCATION_RADIUS_KM,
   allMissionsForPref, buildCollectionProgress, buildCollectionDetail, classifyMission,
+  formatDateInput, isValidDate, todayStr,
 } from "../data.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -77,6 +78,22 @@ const banned = ["旬季", "季節限定", "冬季", "幸運", "探して撮る",
 for (const p of ALL_PREFS) for (const m of allMissionsForPref(p))
   for (const w of banned) if (m.text.includes(w)) fail(p.capital + "「" + w + "」: " + m.text);
 console.log("  残存なし");
+
+console.log("\n== 訪問日の整形と検証 ==");
+// 「弾けること」だけを試すと、全部弾く壊れ方を見逃す。通ることを先に確かめる。
+const mustPass = [todayStr(), "2026-08-23", "2024-02-29", "1999-12-31"];
+for (const v of mustPass) if (!isValidDate(v)) fail("通るべき日付が弾かれた: " + v);
+const mustFail = ["", "あ", "2026-02-31", "2026-13-01", "2026-8-3", "20260823", "dddd-dd-dd"];
+for (const v of mustFail) if (isValidDate(v)) fail("弾くべき値が通った: " + JSON.stringify(v));
+const formats = [["20260823", "2026-08-23"], ["あ2026", "2026"], ["202608", "2026-08"],
+  ["9999999999999", "9999-99-99"], ["", ""]];
+for (const [inp, want] of formats) {
+  const got = formatDateInput(inp);
+  if (got !== want) fail("整形が想定と違う: " + JSON.stringify(inp) + " -> " + JSON.stringify(got) + "（期待 " + JSON.stringify(want) + "）");
+}
+// 入力欄に今日の日付が入った状態で、そのまま押印できることの担保
+if (!isValidDate(formatDateInput(todayStr()))) fail("今日の日付が整形→検証を通らない（押印できなくなる）");
+console.log("  有効 " + mustPass.length + "件が通り、無効 " + mustFail.length + "件を弾き、整形 " + formats.length + "件が一致");
 
 console.log("\n== コレクション ==");
 for (const c of buildCollectionProgress({})) {

@@ -69,6 +69,8 @@ import {
   RANKS,
   rankFor,
   todayStr,
+  formatDateInput,
+  isValidDate,
   MISSION_META,
   rollMission,
   allMissionsForPref,
@@ -402,26 +404,6 @@ function confirmDestructive({ title, message, confirmLabel, onConfirm }) {
     ],
     { cancelable: true }
   );
-}
-
-// Typing a date on a phone keyboard is miserable, so the field formats itself:
-// digits go in, hyphens appear on their own. Stored values stay plain
-// "YYYY-MM-DD" strings, exactly as before, so records written by older builds
-// keep working untouched — this only guards what gets written from now on.
-function formatDateInput(text) {
-  const d = String(text).replace(/[^0-9]/g, "").slice(0, 8);
-  if (d.length <= 4) return d;
-  if (d.length <= 6) return d.slice(0, 4) + "-" + d.slice(4);
-  return d.slice(0, 4) + "-" + d.slice(4, 6) + "-" + d.slice(6);
-}
-
-// Not just the shape — 2026-02-31 matches the pattern but is not a real day.
-function isValidDate(text) {
-  if (!/^d{4}-d{2}-d{2}$/.test(text)) return false;
-  const [y, m, d] = text.split("-").map(Number);
-  if (m < 1 || m > 12 || d < 1) return false;
-  const dt = new Date(y, m - 1, d);
-  return dt.getFullYear() === y && dt.getMonth() === m - 1 && dt.getDate() === d;
 }
 
 // Every photo in this app used to be a plain <Image>: a meal shot rendered at
@@ -826,7 +808,13 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
                 return (
                   <View key={m.id} style={[styles.checklistItem, styles.checklistRow]}>
                     {thumb && (
-                      <TouchableOpacity onPress={() => openViewer(thumb)} accessibilityLabel="証拠写真を拡大">
+                      <TouchableOpacity
+                        onPress={() => openViewer(thumb)}
+                        accessibilityLabel="証拠写真を拡大"
+                        // The thumbnail is only 34px — too small to aim at
+                        // reliably, and it sits in a tight list row.
+                        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      >
                         <Image source={{ uri: thumb }} style={styles.checklistThumb} />
                       </TouchableOpacity>
                     )}
@@ -1425,7 +1413,8 @@ const styles = StyleSheet.create({
   collSummaryNote: { fontSize: 12, color: "#5C544A", fontWeight: "700" },
   collListLabel: { fontSize: 12, fontWeight: "700", color: "#5C544A", marginBottom: 8 },
   collCityRow: { flexDirection: "row", alignItems: "flex-start", gap: 8, backgroundColor: "rgba(255,255,255,0.55)", borderRadius: 10, borderWidth: 1, borderColor: "rgba(43,38,33,0.14)", padding: 10, marginBottom: 6 },
-  collCityRowDone: { backgroundColor: "rgba(46,125,70,0.08)", borderColor: "rgba(46,125,70,0.3)" },
+  // rgba spelling of #2D7944, so the done tint matches the done text colour.
+  collCityRowDone: { backgroundColor: "rgba(45,121,68,0.08)", borderColor: "rgba(45,121,68,0.3)" },
   collCityMark: { width: 16, alignItems: "center", paddingTop: 1 },
   collCityDot: { width: 10, height: 10, borderRadius: 5, borderWidth: 1.5, borderColor: "rgba(43,38,33,0.3)", borderStyle: "dashed" },
   collCityName: { fontSize: 13, fontWeight: "700", color: "#2B2621" },
@@ -1452,7 +1441,7 @@ const styles = StyleSheet.create({
   checklistTextDone: { color: "#2B2621", fontWeight: "700" },
   rouletteBtn: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, borderWidth: 1.5, borderColor: "#B8923F", borderStyle: "dashed", borderRadius: 10, padding: 14, marginBottom: 14, backgroundColor: "rgba(184,146,63,0.08)" },
   rouletteBtnText: { fontSize: 13, fontWeight: "800", color: "#16283F" },
-  completeBanner: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(46,125,70,0.1)", borderColor: "rgba(46,125,70,0.3)", borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 14 },
+  completeBanner: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(45,121,68,0.1)", borderColor: "rgba(45,121,68,0.3)", borderWidth: 1, borderRadius: 10, padding: 10, marginBottom: 14 },
   completeBannerText: { fontSize: 12, fontWeight: "800", color: "#2D7944" },
   missionSection: { marginBottom: 14 },
   missionSectionHead: { flexDirection: "row", justifyContent: "space-between", marginBottom: 6 },
