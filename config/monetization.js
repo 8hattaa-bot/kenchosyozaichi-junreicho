@@ -79,6 +79,16 @@ export function hotelSearchUrl(cityName) {
 
 export const USE_TEST_ADS = true;
 
+// ストア掲載用のスクリーンショットを撮るときだけ false にします。
+//
+// テスト広告のバナーには「Test Ad」と大きく書かれているため、そのまま
+// 撮るとストアの画像に開発用の表示が写り込みます。かといって本番 ID に
+// 切り替えて撮るのは、審査前のアプリで広告リクエストを出すことになり
+// 避けたい。撮影の間だけバナーごと消すのが安全です。
+//
+// 撮り終えたら true に戻してください（戻し忘れると広告が出ません）。
+export const SHOW_ADS = true;
+
 // Google 公式のテスト用 ID（そのまま使って問題ないもの）
 const ADMOB_TEST_ANDROID_APP_ID = "ca-app-pub-3940256099942544~3347511713";
 const ADMOB_TEST_BANNER_UNIT_ID = "ca-app-pub-3940256099942544/6300978111";
