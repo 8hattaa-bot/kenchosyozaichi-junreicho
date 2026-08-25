@@ -87,7 +87,7 @@ export const USE_TEST_ADS = true;
 // 避けたい。撮影の間だけバナーごと消すのが安全です。
 //
 // 撮り終えたら true に戻してください（戻し忘れると広告が出ません）。
-export const SHOW_ADS = false;  // ← 撮影用。撮り終えたら true に戻す
+export const SHOW_ADS = true;
 
 // Google 公式のテスト用 ID（そのまま使って問題ないもの）
 const ADMOB_TEST_ANDROID_APP_ID = "ca-app-pub-3940256099942544~3347511713";
