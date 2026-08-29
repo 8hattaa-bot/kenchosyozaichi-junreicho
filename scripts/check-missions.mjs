@@ -125,5 +125,50 @@ for (const c of buildCollectionProgress({})) {
   console.log("  " + c.label.padEnd(14) + String(c.total).padStart(3) + "都市" + (c.total <= 1 ? "  <- 1都市のみ" : ""));
 }
 
+console.log("\n== app.json と収益化設定の整合 ==");
+{
+  const appJson = JSON.parse(fs.readFileSync(path.join(here, "..", "app.json"), "utf8"));
+  const mon = fs.readFileSync(path.join(here, "..", "config", "monetization.js"), "utf8");
+  const android = appJson.expo.android;
+
+  // AdMob の App ID は app.json と monetization.js の2箇所にある。片方だけ本番に
+  // 変えると、テスト広告のまま出す／初期化に失敗する、といった形で静かに壊れる。
+  const adsPlugin = appJson.expo.plugins.find((p) => Array.isArray(p) && p[0] === "react-native-google-mobile-ads");
+  const appJsonAppId = adsPlugin?.[1]?.androidAppId ?? "";
+  const useTestAds = /export const USE_TEST_ADS\s*=\s*true/.test(mon);
+  const testAppId = (mon.match(/ADMOB_TEST_ANDROID_APP_ID\s*=\s*"([^"]+)"/) || [])[1];
+  const prodAppId = (mon.match(/ADMOB_PROD_ANDROID_APP_ID\s*=\s*"([^"]*)"/) || [])[1];
+  const expected = useTestAds ? testAppId : prodAppId;
+
+  if (!expected) fail("本番の AdMob App ID が空。USE_TEST_ADS=false にする前に ADMOB_PROD_ANDROID_APP_ID を埋めること");
+  else if (appJsonAppId !== expected)
+    fail("AdMob App ID が食い違っている: app.json=" + appJsonAppId + " / monetization.js の期待値=" + expected);
+  else console.log("  AdMob App ID 一致（" + (useTestAds ? "テスト" : "本番") + "）: " + appJsonAppId);
+
+  if (!useTestAds && !/ADMOB_PROD_BANNER_UNIT_ID\s*=\s*"ca-app-pub-/.test(mon))
+    fail("本番モードなのに広告ユニットIDが未設定");
+
+  // 撮影用に落としたまま戻し忘れると、本番で広告が一切出なくなる
+  if (!/export const SHOW_ADS\s*=\s*true/.test(mon)) fail("SHOW_ADS が true でない（撮影用のまま戻し忘れ）");
+  else console.log("  SHOW_ADS = true");
+
+  // 使っていない権限を宣言するとストア審査で説明を求められる
+  const perms = android.permissions || [];
+  const blocked = android.blockedPermissions || [];
+  const appJs = fs.readFileSync(path.join(here, "..", "App.js"), "utf8");
+  if (perms.includes("android.permission.CAMERA") && !/launchCameraAsync/.test(appJs))
+    fail("CAMERA を宣言しているが launchCameraAsync を使っていない");
+  if (!blocked.includes("android.permission.RECORD_AUDIO"))
+    fail("RECORD_AUDIO がブロックされていない（expo-image-picker が自動で足してくる）");
+  const picker = appJson.expo.plugins.find((p) => Array.isArray(p) && p[0] === "expo-image-picker");
+  if (picker?.[1]?.microphonePermission !== false)
+    fail("expo-image-picker の microphonePermission を false にしないと RECORD_AUDIO が入る");
+  console.log("  権限: " + perms.map((p) => p.replace("android.permission.", "")).join(", "));
+
+  if (!appJson.expo.android.package) fail("パッケージ名が無い");
+  if (!appJson.expo.version) fail("version が無い");
+  console.log("  " + appJson.expo.android.package + " / v" + appJson.expo.version + " (versionCode " + android.versionCode + ")");
+}
+
 console.log("\n" + (problems ? "問題 " + problems + " 件" : "問題なし（0件）"));
 process.exit(problems ? 1 : 0);

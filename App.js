@@ -199,8 +199,13 @@ function withTimeout(promise, ms) {
 //   1. Balanced accuracy — the normal, reasonably fast path.
 //   2. A short pause, then Lowest (network/cell-tower only) — sidesteps a
 //      GPS re-lock in progress, which is the most common cause here.
-//   3. getLastKnownPositionAsync — a cached recent fix. Coarser, but the
-//      mission's 15km radius doesn't need pinpoint accuracy anyway.
+//   3. getLastKnownPositionAsync — a cached recent fix.
+//
+// Stage 3 used to be justified by "the mission's 15km radius doesn't need
+// pinpoint accuracy anyway". That stopped being true when the radius became
+// 1km: a cell-tower fix can be off by several kilometres, which is wider than
+// the whole target circle, so it could credit someone who never went. The
+// caller now checks coords.accuracy before trusting any of these.
 async function acquirePosition() {
   try {
     return await withTimeout(Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }), 20000);
@@ -698,6 +703,17 @@ function MissionModal({ pref, record, rerollRecord, onClose, onSave, onClear, on
       // centre — those can be several km apart, which made missions
       // unachievable even while standing at the right place. Falls back to the
       // city centre if a city ever lacks a target entry.
+      // A fix whose own error margin is wider than the target circle cannot
+      // answer "am I within 1km" either way. Saying so beats silently crediting
+      // a stamp on a cell-tower estimate that could be kilometres out.
+      const accuracyM = pos.coords?.accuracy;
+      if (accuracyM != null && accuracyM > LOCATION_RADIUS_KM * 1000) {
+        setGeoErrorDetail(
+          `測位の誤差が約${Math.round(accuracyM)}mあり、${LOCATION_RADIUS_KM}km以内かを判定できません`
+        );
+        setGeoStatus("error");
+        return;
+      }
       const target = LOCATION_TARGETS[pref.id] || { lat: pref.lat, lng: pref.lng };
       const d = distanceKm(pos.coords.latitude, pos.coords.longitude, target.lat, target.lng);
       setGeoDistance(d);

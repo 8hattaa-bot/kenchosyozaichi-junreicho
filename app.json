@@ -16,11 +16,11 @@
       "permissions": [
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.CAMERA",
         "android.permission.READ_MEDIA_IMAGES"
       ],
       "blockedPermissions": [
-        "android.permission.RECORD_AUDIO"
+        "android.permission.RECORD_AUDIO",
+        "android.permission.CAMERA"
       ]
     },
     "plugins": [
@@ -34,7 +34,8 @@
         "expo-image-picker",
         {
           "photosPermission": "ミッションの証拠写真を選ぶために使用します。",
-          "cameraPermission": "ミッションの証拠写真を撮影するために使用します。"
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       [
